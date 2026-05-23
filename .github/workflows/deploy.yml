@@ -66,6 +66,7 @@ jobs:
               restart: unless-stopped
               environment:
                 MYSQL_ROOT_PASSWORD: 361c9ee7d7
+                MYSQL_ROOT_HOST: "%"
                 MYSQL_DATABASE: innovatech
               ports:
                 - "3306:3306"

@@ -4,7 +4,8 @@ services:
     container_name: innovatech-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_ROOT_PASSWORD: 361c9ee7d7
+      MYSQL_ROOT_HOST: "%"
       MYSQL_DATABASE: innovatech
     ports:
       - "3306:3306"
@@ -19,7 +20,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/innovatech
       SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: root123
+      SPRING_DATASOURCE_PASSWORD: 361c9ee7d7
     ports:
       - "8080:8080"
     depends_on:
@@ -33,7 +34,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/innovatech
       SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: root123
+      SPRING_DATASOURCE_PASSWORD: 361c9ee7d7
     ports:
       - "8081:8081"
     depends_on:
