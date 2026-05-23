@@ -1,0 +1,125 @@
+name: Deploy Backend Innovatech
+
+on:
+  push:
+    branches:
+      - deploy
+
+env:
+  IMAGE_TAG: latest
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Definir imagenes
+        run: |
+          echo "VENTAS_IMAGE=${{ steps.login-ecr.outputs.registry }}/innovatech-ventas-backend:${IMAGE_TAG}" >> $GITHUB_ENV
+          echo "DESPACHOS_IMAGE=${{ steps.login-ecr.outputs.registry }}/innovatech-despachos-backend:${IMAGE_TAG}" >> $GITHUB_ENV
+
+      - name: Build y push Ventas Backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./back-Ventas_SpringBoot/Springboot-API-REST
+          push: true
+          tags: ${{ env.VENTAS_IMAGE }}
+
+      - name: Build y push Despachos Backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
+          push: true
+          tags: ${{ env.DESPACHOS_IMAGE }}
+
+      - name: Deploy Backend EC2
+        run: |
+          cat > /tmp/deploy-backend.sh <<'SCRIPT'
+          #!/bin/bash
+          set -eux
+
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
+
+          mkdir -p /opt/innovatech-backend
+          cd /opt/innovatech-backend
+
+          cat > docker-compose.yml <<'COMPOSE'
+          services:
+            mysql:
+              image: mysql:8.0
+              container_name: innovatech-mysql
+              restart: unless-stopped
+              environment:
+                MYSQL_ROOT_PASSWORD: 361c9ee7d7
+                MYSQL_DATABASE: innovatech
+              ports:
+                - "3306:3306"
+              volumes:
+                - innovatech_mysql_data:/var/lib/mysql
+
+            ventas-backend:
+              image: __VENTAS_IMAGE__
+              container_name: innovatech-ventas-backend
+              restart: unless-stopped
+              environment:
+                SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/__MYSQL_DATABASE__
+                SPRING_DATASOURCE_USERNAME: root
+                SPRING_DATASOURCE_PASSWORD: __MYSQL_ROOT_PASSWORD__
+              ports:
+                - "8080:8080"
+              depends_on:
+                - mysql
+
+            despachos-backend:
+              image: __DESPACHOS_IMAGE__
+              container_name: innovatech-despachos-backend
+              restart: unless-stopped
+              environment:
+                SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/__MYSQL_DATABASE__
+                SPRING_DATASOURCE_USERNAME: root
+                SPRING_DATASOURCE_PASSWORD: __MYSQL_ROOT_PASSWORD__
+              ports:
+                - "8081:8081"
+              depends_on:
+                - mysql
+
+          volumes:
+            innovatech_mysql_data:
+          COMPOSE
+
+          sed -i 's#__MYSQL_ROOT_PASSWORD__#${{ secrets.MYSQL_ROOT_PASSWORD }}#g' docker-compose.yml
+          sed -i 's#__MYSQL_DATABASE__#${{ secrets.MYSQL_DATABASE }}#g' docker-compose.yml
+          sed -i 's#__VENTAS_IMAGE__#${{ env.VENTAS_IMAGE }}#g' docker-compose.yml
+          sed -i 's#__DESPACHOS_IMAGE__#${{ env.DESPACHOS_IMAGE }}#g' docker-compose.yml
+
+          docker compose pull || docker-compose pull
+          docker compose up -d || docker-compose up -d
+          docker ps
+          SCRIPT
+
+          COMMANDS=$(jq -Rs 'split("\n") | map(select(length > 0))' /tmp/deploy-backend.sh)
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ secrets.BACKEND_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy Backend Innovatech" \
+            --parameters commands="$COMMANDS" \
+            --query "Command.CommandId" \
+            --output text)
+
+          aws ssm wait command-executed --command-id "$COMMAND_ID" --instance-id "${{ secrets.BACKEND_INSTANCE_ID }}" || true
