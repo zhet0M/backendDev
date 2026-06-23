@@ -1,0 +1,62 @@
+name: Deploy Backend Innovatech
+
+on:
+  push:
+    branches:
+      - deploy
+
+env:
+  IMAGE_TAG: latest
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Definir imagenes
+        run: |
+          echo "VENTAS_IMAGE=${{ steps.login-ecr.outputs.registry }}/innovatech-ventas-backend:${IMAGE_TAG}" >> $GITHUB_ENV
+          echo "DESPACHOS_IMAGE=${{ steps.login-ecr.outputs.registry }}/innovatech-despachos-backend:${IMAGE_TAG}" >> $GITHUB_ENV
+
+      - name: Build y push Ventas Backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./back-Ventas_SpringBoot/Springboot-API-REST
+          push: true
+          tags: ${{ env.VENTAS_IMAGE }}
+
+      - name: Build y push Despachos Backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
+          push: true
+          tags: ${{ env.DESPACHOS_IMAGE }}
+
+      - name: Deploy a ECS Ventas
+        run: |
+          aws ecs update-service \
+            --cluster innovatech-cluster \
+            --service innovatech-ventas-svc \
+            --force-new-deployment
+
+      - name: Deploy a ECS Despachos
+        run: |
+          aws ecs update-service \
+            --cluster innovatech-cluster \
+            --service innovatech-despachos-svc \
+            --force-new-deployment
