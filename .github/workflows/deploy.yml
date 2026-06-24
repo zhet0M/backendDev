@@ -50,13 +50,13 @@ jobs:
       - name: Deploy a ECS Ventas
         run: |
           aws ecs update-service \
-            --cluster innovatech-cluster \
+            --cluster innovatech-cluster2 \
             --service innovatech-ventas-svc \
             --force-new-deployment
 
       - name: Deploy a ECS Despachos
         run: |
           aws ecs update-service \
-            --cluster innovatech-cluster \
+            --cluster innovatech-cluster2 \
             --service innovatech-despachos-svc \
             --force-new-deployment
